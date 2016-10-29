@@ -31,3 +31,9 @@
 # Debug files
 *.dSYM/
 *.su
+ascbias-segments
+sm-sample
+ms-parser.c
+ms-parser.h
+ms-scanner.c
+fscl
