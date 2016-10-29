@@ -213,6 +213,7 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
   if (force_neutral_spectrum) return neutral_spectra(scan_obj);
   if (background_fsfname) return load_spectra(scan_obj, background_fsfname);
 
+  fprintf(stderr,"Estimating background site frequency spectrum....   \n");
   MA(fsp, sizeof(double *)*scan_obj->n_depths);
   max_depth_p = -1;
   max_depth = -1000;
@@ -226,7 +227,8 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
     }
   }
   log_fact(max_depth+1);
-
+  fprintf(stderr,"%d distinct sample depths observed. Maximum sample depth is %d haplotypes.\n", scan_obj->n_depths, max_depth);
+  
   MA(tmp_fsp, sizeof(double)*(max_depth+1));
   for(k=0;k<=max_depth;k++) tmp_fsp[k] = 0.;
   for(i=0;i<scan_obj->n_snps;i++) {
@@ -264,6 +266,7 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
   for(k=0;k<=max_depth;k++) tmp_fsp[k] /= fsp_sum;
 
   for(m=0;m<scan_obj->n_depths;m++) {
+    fprintf(stderr,"\rEstimating frequency spectrum for sample depth %6d  (%1.1f%%)", scan_obj->sample_depths[m], (m+1)/(double) scan_obj->n_depths * 100.);
     depth = scan_obj->sample_depths[m];
     //    if (depth < max_depth) {
       hypergeometric_downsample_fsp(fsp[m], tmp_fsp, depth,
@@ -274,6 +277,7 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
       for(k=0;k<=depth;k++) fsp[m][k] /= fsp_sum;
       //   }
   }
+  fprintf(stderr,"\nDone estimating background frequency spectra.\n");
 
 #if 0
   for(m=0;m<scan_obj->n_depths;m++) {

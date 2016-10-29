@@ -99,8 +99,14 @@ scan_t *load_snp_input(char *snp_fname, int include_invariant) {
     }
     scan_obj->snps[scan_obj->n_snps].depth_p = j;
     scan_obj->n_snps++;
+    if ((scan_obj->n_snps & 0x7FFF) == 0) {
+      fprintf(stderr,"\rLoading SNPs and allele frequencies.... %11d SNPs ",
+	      scan_obj->n_snps);
+    }
   }
   fclose(f);
+  fprintf(stderr,"\rLoading SNPs and allele frequencies.... %11d SNPs -"
+	  " complete.\n", scan_obj->n_snps);
 
   if (scan_obj->n_snps == 0) {
     fprintf(stderr,"No usable snps found in file \"%s\"\n",snp_fname);

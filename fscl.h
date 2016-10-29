@@ -78,7 +78,7 @@ typedef struct {
 #define LOG_AD_MIN (-20.0)
 #define LOG_AD_MAX (4.0)
 
-#define SNP_ALLOC_STEP (16384)
+#define SNP_ALLOC_STEP (512*1024)
 
 /* snp-input.c */
 scan_t *load_snp_input(char *snp_fname, int include_invariant);
