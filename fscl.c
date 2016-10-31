@@ -85,7 +85,7 @@ static option_t options[] = {
   { 0, "prepend-label", &prepend_label, OPT_STR, 1, 1,
     "optional token to prepend to each line of the sweep scan output" },
   { 'v', "verbosity", &verbosity_level, OPT_INT, 1, 1,
-    "verbosity level 0-4, default 3, debug 4 and above" },
+    "verbosity level 0-5, default 3, debug 4 and above" },
   { 'o', "output-file", &output_fname, OPT_STR, 1, 1,
     "output file for scan results" },
 
@@ -161,7 +161,7 @@ static void init_options() {
   output_fname = NULL;
   output_bs_fname = NULL;
 
-  spline_pts = 200;
+  spline_pts = N_SPLINE_KNOTS;
   include_invariant = 0;
 
   alpha_factor = 1.0;
@@ -183,9 +183,9 @@ static void validate_options() {
   if (ascbias_background_only) logmsg(MSG_STATUS,"ascertainment bias correction to background site frequency spectrum only\n");
 
   stop = 0;
-  if (spline_pts < 200) {
-    logmsg(MSG_ERROR,"Error: must use at least 200 spline functions to "
-	   "approximate sweep model\nlikelihood function.\n");
+  if (spline_pts < N_SPLINE_KNOTS) {
+    logmsg(MSG_ERROR,"Error: must use at least %d spline functions to "
+	   "approximate sweep model\nlikelihood function.\n", N_SPLINE_KNOTS);
     stop = 1;
   }
   if (spline_pts > 500) {

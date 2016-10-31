@@ -78,6 +78,8 @@ typedef struct {
 #define LOG_AD_MIN (-20.0)
 #define LOG_AD_MAX (4.0)
 
+#define N_SPLINE_KNOTS (200)
+
 #define SNP_ALLOC_STEP (512*1024)
 
 /* snp-input.c */

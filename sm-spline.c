@@ -6,10 +6,12 @@
 
 #include <math.h>
 #include <float.h>
+#include <omp.h>
 
 #include <kmacros.h>
 #include "fscl.h"
 
+static omp_lock_t thread_lock;
 extern int spline_pts;
 double log_ad_step;
 
@@ -214,7 +216,7 @@ static double **pjh_use_splines(double *fsp, int n) {
   double *xjh, *yjh, **pjh;
   spline_t *spf;
 
-  n_knots = 200;
+  n_knots = N_SPLINE_KNOTS;
   MA(xjh, sizeof(double)*(n_knots));
   MA(yjh, sizeof(double)*(n_knots));
 
@@ -223,7 +225,7 @@ static double **pjh_use_splines(double *fsp, int n) {
   for(j=0;j<=n;j++) {
     pjh[j] = pjh[0] + j*(n+1);
 
-    cr_logmsg(MSG_DEBUG1,"Building pjh array %1.1f%%", j/(double) n * 100.0);
+    cr_logmsg(MSG_DEBUG2,"Building pjh array %1.1f%%", j/(double) n * 100.0);
     if (n - j > n_knots) {
       spline_interval = (n - j - 40) / (double) (n_knots - 40);
       for(s=0;s<20;s++)
@@ -273,7 +275,7 @@ static double **pjh_use_splines(double *fsp, int n) {
       }
     }
   }
-  logmsg(MSG_DEBUG1,"");
+  logmsg(MSG_DEBUG2,"");
   free(xjh);
   free(yjh);
 
@@ -287,12 +289,18 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
   int b, h, i, j, k, q, f;
   double **pjh, **pbk, *x, **y, **fy, *p, p_sum;
   sm_ptable_t sm_ptable;
+  static int warned = 0;
 
   log_ad_step = (LOG_AD_MAX - LOG_AD_MIN)/(spline_pts + 1.);
 
   if (sample_size > 800) {
-    logmsg(MSG_STATUS,"sample size > 800, using splines to approximiate pjh "
-	   "pre-computation.");
+    omp_set_lock(&thread_lock);
+    if (warned == 0) {
+      logmsg(MSG_WARN,"sample depths are > 800, using splines to approximiate pjh "
+	     "pre-computation.");
+      warned = 1;
+    }
+    omp_unset_lock(&thread_lock);    
     pjh = pjh_use_splines(fsp, sample_size);
   } else {
     MA(pjh, sizeof(double *)*(sample_size + 1));
@@ -419,9 +427,9 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
     }
 
     x[i] = log_ad;
-    fprintf(stderr,"%5d %5.2f %5.3f %5.3f %5.3f %5.3f\n",i, x[i], p[0], p[1], p[sample_size-1],p[sample_size]);
+    logmsg(MSG_DEBUG1,"%5d %5d %5.2f %5.3f %5.3f %5.3f %5.3f", sample_size, i, x[i], p[0], p[1], p[sample_size-1],p[sample_size]);
   }
-    fprintf(stderr,"bgrnd %d %5.3f %5.3f %5.3f %5.3f\n", sample_size, fsp[0], fsp[1], fsp[sample_size-1], fsp[sample_size]);
+  logmsg(MSG_DEBUG1,"bgrnd %d %5.3f %5.3f %5.3f %5.3f", sample_size, fsp[0], fsp[1], fsp[sample_size-1], fsp[sample_size]);
 
   sm_ptable.pbk = pbk;
   sm_ptable.fsp = fsp;
@@ -451,8 +459,13 @@ sm_ptable_t *compute_sweep_model_tables(scan_t *scan_obj, double **fsp,
   int i;
   sm_ptable_t *sm_p;
   double *asc;
-
+  int n_complete;
+  
+  omp_init_lock(&thread_lock);
+  n_complete = 0;
   MA(sm_p, sizeof(sm_ptable_t)*scan_obj->n_depths);
+
+#pragma omp parallel for schedule(dynamic, 2)
   for(i=0;i<scan_obj->n_depths;i++) {
     if (asc_depth > 0) {
       asc = ascbias_adjust_background(fsp[i], scan_obj->sample_depths[i],
@@ -464,9 +477,16 @@ sm_ptable_t *compute_sweep_model_tables(scan_t *scan_obj, double **fsp,
 				      asc_depth, asc_min_freq, 
 				      ascbias_background_only,
 				      include_invariant);
+    omp_set_lock(&thread_lock);
+    n_complete++;
+    cr_logmsg(MSG_STATUS,"Computing sweep models for all sample depths - %1.1f%% ",
+	      n_complete/(double) scan_obj->n_depths * 100.);
+    omp_unset_lock(&thread_lock);
   }
-    
+  logmsg(MSG_STATUS,"");
+  omp_destroy_lock(&thread_lock);
   return sm_p;
 }
+
 
 
