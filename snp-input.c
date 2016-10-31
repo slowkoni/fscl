@@ -3,6 +3,8 @@
 #include <string.h>
 #include <errno.h>
 
+#include <unistd.h>
+
 #include <kmacros.h>
 #include "fscl.h"
 
@@ -77,6 +79,7 @@ scan_t *load_snp_input(char *snp_fname, int include_invariant) {
 
     if (pos > max_pos) max_pos = pos;
 
+    
 
     if (scan_obj->n_snps % SNP_ALLOC_STEP == 0) {
       RA(scan_obj->snps, sizeof(snp_t)*(scan_obj->n_snps + SNP_ALLOC_STEP));
@@ -100,12 +103,15 @@ scan_t *load_snp_input(char *snp_fname, int include_invariant) {
     scan_obj->snps[scan_obj->n_snps].depth_p = j;
     scan_obj->n_snps++;
     if ((scan_obj->n_snps & 0x7FFF) == 0) {
-      fprintf(stderr,"\rLoading SNPs and allele frequencies.... %11d SNPs ",
+      if (isatty(2)) fprintf(stderr,"\r"); 
+      fprintf(stderr,"Loading SNPs and allele frequencies.... %11d SNPs ",
 	      scan_obj->n_snps);
+      if (!isatty(2)) fprintf(stderr,"\n"); 
     }
   }
   fclose(f);
-  fprintf(stderr,"\rLoading SNPs and allele frequencies.... %11d SNPs -"
+  if (isatty(2)) fprintf(stderr,"\r"); 
+  fprintf(stderr,"Loading SNPs and allele frequencies.... %11d SNPs -"
 	  " complete.\n", scan_obj->n_snps);
 
   if (scan_obj->n_snps == 0) {
