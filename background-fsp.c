@@ -8,9 +8,11 @@
 #include <math.h>
 #include <float.h>
 #include <unistd.h>
+#include <omp.h>
 
 #include "fscl.h"
 
+static omp_lock_t thread_lock;
 static double log_fact(int n) {
   static int n_max = 0;
   static double *lookup_table = NULL;
@@ -30,7 +32,7 @@ static double log_fact(int n) {
       lookup_table[i] = lookup_table[i-1] + log(i);
     n_max = n;
   }
-
+  
   return lookup_table[n];
 }
 
@@ -163,7 +165,7 @@ static double **load_spectra(scan_t *scan_obj, char *bs_fname) {
 
   f = fopen(bs_fname, "r");
   if (f == NULL) 
-    logmsg(MSG_FATAL,"Can't background frequency spectrum file \"%s\" (%s)\n",
+    logmsg(MSG_FATAL,"\nCan't background frequency spectrum file \"%s\" (%s)",
 	   bs_fname, strerror(errno));
 
   while(fgets(inputline, 8192, f) != NULL) {
@@ -179,7 +181,7 @@ static double **load_spectra(scan_t *scan_obj, char *bs_fname) {
 
     if (i == scan_obj->n_depths) {
       logmsg(MSG_STATUS,"Frequency spectrum for %d classes not required by "
-	     "snp data.\n", depth);
+	     "snp data.", depth);
       continue;
     }
 
@@ -189,15 +191,15 @@ static double **load_spectra(scan_t *scan_obj, char *bs_fname) {
       fsp[i][j++] = strtod(q, NULL);
     }
     if (j != depth) 
-      logmsg(MSG_FATAL, "Error: Frequency spectrum on line %d indicates "
-	     "%d classes but %d were found.\n", depth, j);
+      logmsg(MSG_FATAL, "\nError: Frequency spectrum on line %d indicates "
+	     "%d classes but %d were found.", depth, j);
 
   }
 
   for(i=0;i<scan_obj->n_depths;i++) {
     if (fsp[i] == NULL) {
-      logmsg(MSG_FATAL, "Error: data requires background frequency spectrum "
-	     "for sample depth %d, not found %s\n", scan_obj->sample_depths[i],
+      logmsg(MSG_FATAL, "\nError: data requires background frequency spectrum "
+	     "for sample depth %d, not found %s", scan_obj->sample_depths[i],
 	     bs_fname);
     }
   }
@@ -210,11 +212,13 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
   int m, k, i, depth, max_depth;
   int __attribute__((unused))max_depth_p;
   double fsp_sum, **fsp, *tmp_fsp, wa, wd;
+  int n_complete;
 
+  omp_init_lock(&thread_lock);
   if (force_neutral_spectrum) return neutral_spectra(scan_obj);
   if (background_fsfname) return load_spectra(scan_obj, background_fsfname);
 
-  fprintf(stderr,"Estimating background site frequency spectrum....   \n");
+  logmsg(MSG_STATUS,"Estimating background site frequency spectrum....   ");
   MA(fsp, sizeof(double *)*scan_obj->n_depths);
   max_depth_p = -1;
   max_depth = -1000;
@@ -228,8 +232,8 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
     }
   }
   log_fact(max_depth+1);
-  fprintf(stderr,"%d distinct sample depths observed. Maximum sample depth is %d haplotypes.\n", scan_obj->n_depths, max_depth);
-  fprintf(stderr,"log(%d!) = %1.1f\n", max_depth, log_fact(max_depth)); 
+  logmsg(MSG_STATUS,"%d distinct sample depths observed. Maximum sample depth is %d haplotypes.", scan_obj->n_depths, max_depth);
+  logmsg(MSG_DEBUG1,"log(%d!) = %1.1f", max_depth, log_fact(max_depth)); 
   
   MA(tmp_fsp, sizeof(double)*(max_depth+1));
   for(k=0;k<=max_depth;k++) tmp_fsp[k] = 0.;
@@ -266,24 +270,29 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
   fsp_sum = 0.;
   for(k=0;k<=max_depth;k++) fsp_sum += tmp_fsp[k];
   for(k=0;k<=max_depth;k++) tmp_fsp[k] /= fsp_sum;
-  fprintf(stderr,"Total SNPs observed at max depth %d is %1.1f (%1.1f%%)\n", max_depth, fsp_sum, fsp_sum/(double) scan_obj->n_snps * 100.);  
+  logmsg(MSG_STATUS,"Total SNPs observed at max depth %d is %1.1f (%1.1f%%)", max_depth, fsp_sum, fsp_sum/(double) scan_obj->n_snps * 100.);  
 
+  n_complete = 0;
+#pragma omp parallel for schedule(dynamic, 2)
   for(m=0;m<scan_obj->n_depths;m++) {
-    if (isatty(2)) fprintf(stderr,"\r");
-    fprintf(stderr,"Estimating frequency spectrum for sample depth %6d  (%1.1f%%)", scan_obj->sample_depths[m], (m+1)/(double) scan_obj->n_depths * 100.);
-    if (!isatty(2)) fprintf(stderr,"\n");
+    int k, depth;
+    double fsp_sum;
+
     depth = scan_obj->sample_depths[m];
-    //    if (depth < max_depth) {
-      hypergeometric_downsample_fsp(fsp[m], tmp_fsp, depth,
-				    max_depth, include_invariant);
+    hypergeometric_downsample_fsp(fsp[m], tmp_fsp, depth,
+				  max_depth, include_invariant);
     
-      fsp_sum = 0.;
-      for(k=0;k<=depth;k++) fsp_sum += fsp[m][k];
-      for(k=0;k<=depth;k++) fsp[m][k] /= fsp_sum;
-      //   }
+    fsp_sum = 0.;
+    for(k=0;k<=depth;k++) fsp_sum += fsp[m][k];
+    for(k=0;k<=depth;k++) fsp[m][k] /= fsp_sum;
+
+    omp_set_lock(&thread_lock);
+    n_complete++;
+    cr_logmsg(MSG_STATUS,"Estimating frequency spectrum for different sample"
+	    " depths (%1.1f%%)", n_complete/(double) scan_obj->n_depths * 100.);
+    omp_unset_lock(&thread_lock);
   }
-  if (isatty(2)) fprintf(stderr,"\n");
-  fprintf(stderr,"\nDone estimating background frequency spectra.\n");
+  logmsg(MSG_STATUS,"\nDone estimating background frequency spectra.");
 
 #if 0
   for(m=0;m<scan_obj->n_depths;m++) {
@@ -330,6 +339,7 @@ double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,
   }    
 #endif
 
+  omp_destroy_lock(&thread_lock);
   return fsp;
 }
 
@@ -339,9 +349,8 @@ void output_background_fs(char *fname, scan_t *scan_obj, double **fsp) {
 
   f = fopen(fname, "w");
   if (f == NULL) {
-    fprintf(stderr,"Can't open background frequency spectrum file \"%s\" for "
-	    "output. (%s)\n", fname, strerror(errno));
-    exit(-1);
+    logmsg(MSG_FATAL,"\nCan't open background frequency spectrum file \"%s\" for "
+	    "output. (%s)", fname, strerror(errno));
   }
 
   for(i=0;i<scan_obj->n_depths;i++) {
