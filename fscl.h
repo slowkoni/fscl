@@ -83,7 +83,8 @@ typedef struct {
 #define SNP_ALLOC_STEP (512*1024)
 
 /* snp-input.c */
-scan_t *load_snp_input(char *snp_fname, int include_invariant);
+scan_t *load_snp_input(char *snp_fname, int include_invariant,
+		       int minimum_obs_depth);
 
 /* background-fsp.c */
 double **background_fsp(scan_t *scan_obj, int force_neutral_spectrum,

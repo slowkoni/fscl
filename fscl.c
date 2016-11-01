@@ -26,7 +26,7 @@ static int force_neutral_spectrum, ms_segment_length, ms_folded;
 static int ms_sample_first, ms_sample_size;
 static int asc_depth, asc_min_freq, ascbias_background_only;
 static int include_invariant, maximum_only;
-static int small_grid_sp, large_grid_sp, dont_scan;
+static int small_grid_sp, large_grid_sp, dont_scan, minimum_obs_depth;
 static int n_threads;
 static double permute_nbp, alpha_factor, scan_width_mb;
 static int verbosity_level;
@@ -56,7 +56,9 @@ static option_t options[] = {
     "Size of coarse grid in which CLR maxima will be selected" },
   { 'w', "sweep-width", &scan_width_mb, OPT_DBL, 1, 1,
     "maximum width of sweep effect in scanning, in Mb" },
-
+  {  0, "minimum-depth", &minimum_obs_depth, OPT_INT, 1, 1,
+     "minimum depth of sample (lower depth SNPs ignored)" },
+  
   { 'm', "msfile", &ms_fname, OPTION_STRINGTYPE, 1, 1,
     "Name of an ms output file" },
   { 0, "ms-segment-length", &ms_segment_length, OPTION_INTTYPE, 1, 1,
@@ -144,7 +146,8 @@ static void init_options() {
   n_permute = 0;
   permute_nbp = 0.1;
   n_threads = 1;
-
+  minimum_obs_depth = 5;
+  
   ms_fname = NULL;
   ms_segment_length = 0;
   ms_folded = 0;
@@ -182,6 +185,8 @@ static void validate_options() {
 
   if (ascbias_background_only) logmsg(MSG_STATUS,"ascertainment bias correction to background site frequency spectrum only\n");
 
+  if (minimum_obs_depth < 5) minimum_obs_depth = 5;
+  
   stop = 0;
   if (spline_pts < N_SPLINE_KNOTS) {
     logmsg(MSG_ERROR,"Error: must use at least %d spline functions to "
@@ -304,7 +309,7 @@ int main(int argc, char *argv[]) {
       scan_free(scan_obj);
     }
   } else {
-    scan_obj = load_snp_input(snp_fname, include_invariant);
+    scan_obj = load_snp_input(snp_fname, include_invariant, minimum_obs_depth);
 
     fsp = background_fsp(scan_obj, force_neutral_spectrum, bs_fname,
 			 include_invariant);

@@ -16,7 +16,8 @@ static int pos_compare(snp_t *a, snp_t *b) {
   return 0;
 }
 
-scan_t *load_snp_input(char *snp_fname, int include_invariant) {
+scan_t *load_snp_input(char *snp_fname, int include_invariant,
+		       int minimum_obs_depth) {
   FILE *f;
   int i, j, obs_freq, sample_size, folded, line_no, pos, max_pos;
   int n_chromosomes, chr_index;
@@ -60,7 +61,7 @@ scan_t *load_snp_input(char *snp_fname, int include_invariant) {
       continue;
     }
 
-    if (sample_size < 5) continue;
+    if (sample_size < minimum_obs_depth) continue;
     if (!include_invariant && (obs_freq < 1 || obs_freq > sample_size-1))
       continue;
 
