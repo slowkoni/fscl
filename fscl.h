@@ -28,6 +28,7 @@ typedef struct {
   char *name;
   int start_index;
   int n_snps;
+  int start_pos;
   int bp_length;
 } chr_limits_t;
 

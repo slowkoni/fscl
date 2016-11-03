@@ -131,6 +131,7 @@ scan_t *load_snp_input(char *snp_fname, int include_invariant,
     chr_limits[scan_obj->snps[i].chr].chr = scan_obj->snps[i].chr;
     chr_limits[scan_obj->snps[i].chr].start_index = i;
     chr_limits[scan_obj->snps[i].chr].n_snps = j - i;
+    chr_limits[scan_obj->snps[i].chr].start_pos = scan_obj->snps[i].pos;
     chr_limits[scan_obj->snps[i].chr].bp_length = scan_obj->snps[j-1].pos;
     chr_limits[scan_obj->snps[i].chr].name = chr_names[scan_obj->snps[i].chr];
     i = j;

@@ -60,10 +60,16 @@ static void init_scan_result(scan_pt_t *scan_pt, int chr, snp_t *snps,
   int i, chm_start, chm_stop;
 
   scan_pt->chr = chr;
-  scan_pt->sweep_pos = pos;
   scan_pt->nearest_snp = limits->start_index + 
     search_snppos(snps + limits->start_index, limits->n_snps, pos);
 
+  i = scan_pt->nearest_snp;
+  while(i < limits->n_snps && snps[i].pos == pos) {
+    i++;
+    pos++;
+  }
+  scan_pt->sweep_pos = pos;
+  
   chm_start = limits->start_index;
   chm_stop  = limits->start_index + limits->n_snps - 1;
 
@@ -73,8 +79,8 @@ static void init_scan_result(scan_pt_t *scan_pt, int chr, snp_t *snps,
     if (scan_pt->window_end   >  chm_stop) scan_pt->window_end    = chm_stop;
   } 
   else if (scan_pt->nearest_snp + eval_range > chm_stop) {
-    scan_pt->window_end   = chm_stop;;
-    scan_pt->window_start = chm_stop = eval_range * 2;
+    scan_pt->window_end   = chm_stop;
+    scan_pt->window_start = chm_stop - eval_range * 2;
     if (scan_pt->window_start <  chm_start) scan_pt->window_start = chm_start;
   } 
   else {
@@ -173,7 +179,7 @@ static void *scan_thread(scan_args_t *args) {
 
     if (args->scan_pos >= scan_obj->chr_limits[args->scan_chm].bp_length) {
       args->scan_chm++;
-      args->scan_pos = 0;
+      args->scan_pos = scan_obj->chr_limits[args->scan_chm].start_pos;
             
       if (args->scan_chm == scan_obj->n_chromosomes) break;
     }
@@ -244,7 +250,7 @@ void scan_chromosome(scan_t *scan_obj, sm_ptable_t *sm_ptable, int eval_range,
   scan_args.bp_resl = bp_resl;
 
   scan_args.scan_chm = 0;
-  scan_args.scan_pos = 0;
+  scan_args.scan_pos = scan_obj->chr_limits[scan_args.scan_chm].start_pos;
   pthread_mutex_init(&scan_args.scan_lock, NULL);
 
   MA(threads, sizeof(pthread_t)*n_threads);
@@ -679,11 +685,11 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
     sprintf(pos_str, "chromosome %s %1.2f Kb", 
 	    scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos/1e3);
   } else {
-    sprintf(pos_str, "chromosome %s %d ", 
+    sprintf(pos_str, "chromosome %s %d bp", 
 	    scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos);
   }
-  logmsg(MSG_STATUS,"\rScan finished -- maximum CLR of %1.2f at %s "
-	 "(alpha = %1.3e)\n", max_clr, pos_str, exp(s_pt->lalpha));
+  logmsg(MSG_STATUS,"\rScan finished -- maximum CLR of %g at %s "
+	 "(alpha = %g)\n", max_clr, pos_str, exp(s_pt->lalpha));
 
   if (maximum_only) {
     if (prepend_label) fprintf(out_f,"%s\t",prepend_label);
