@@ -209,14 +209,14 @@ static double p_kescape(int k, int n, double ad) {
   return exp(lchoose(n, k) + k * log(1.0 - exp(-ad)) - (n-k)*ad);
 }
 
-
+#define EXACT_KNOTS (100)
 static double **pjh_use_splines(double *fsp, int n) {
   int n_knots, i, j, h, s;
   double spline_interval;
   double *xjh, *yjh, **pjh;
   spline_t *spf;
 
-  n_knots = N_SPLINE_KNOTS;
+  n_knots = 500;//N_SPLINE_KNOTS;
   MA(xjh, sizeof(double)*(n_knots));
   MA(yjh, sizeof(double)*(n_knots));
 
@@ -227,15 +227,15 @@ static double **pjh_use_splines(double *fsp, int n) {
 
     cr_logmsg(MSG_DEBUG2,"Building pjh array %1.1f%%", j/(double) n * 100.0);
     if (n - j > n_knots) {
-      spline_interval = (n - j - 40) / (double) (n_knots - 40);
-      for(s=0;s<20;s++)
+      spline_interval = (n - j - EXACT_KNOTS*2) /(double) (n_knots - EXACT_KNOTS*2);
+      for(s=0;s<EXACT_KNOTS;s++)
 	xjh[s] = j+s;
-      while(s<n_knots-20) {
-	xjh[s] = (j+20) + floor((s-20)*spline_interval);
+      while(s<n_knots-EXACT_KNOTS) {
+	xjh[s] = (j+EXACT_KNOTS) + rint((s-EXACT_KNOTS)*spline_interval);
 	s++;
       }
       while(s<n_knots-1) {
-	xjh[s] = n - (n_knots - s) + 1;
+	xjh[s] = n - (n_knots - s);
 	s++;
       }
       xjh[s] = n;
@@ -243,7 +243,7 @@ static double **pjh_use_splines(double *fsp, int n) {
       for(s=0;s<n_knots;s++) {
 	yjh[s] = 0.;
 
-	for(i=j;i<n;i++) {
+	for(i=j;i<=n;i++) {
 	  yjh[s] += fsp[i]*exp(lchoose(i,j) +
 			       lchoose(n - i, xjh[s] - j) -
 			       lchoose(n, xjh[s]));
@@ -257,17 +257,18 @@ static double **pjh_use_splines(double *fsp, int n) {
       for(;h<=n;h++) {
 	pjh[j][h] = spline_interpolate(spf, (double) h);
 	if (isnan(pjh[j][h])) abort();
+	if (pjh[j][h] < 0.) pjh[j][h] = 0.;
       }
       free(spf->knot_points);
       free(spf->coef[0]);
       free(spf->coef);
       free(spf);
     } else {
-      for(h=0;h<j;h++)
+      //      for(h=0;h<j;h++)
+      //	pjh[j][h] = 0.;
+      for(h=0;h<=n;h++) {
 	pjh[j][h] = 0.;
-      for(;h<=n;h++) {
-	pjh[j][h] = 0.;
-	for(i=j;i<n;i++) {
+	for(i=j;i<=n;i++) {
 	  pjh[j][h] += fsp[i]*exp(lchoose(i,j) +
 			     lchoose(n - i, h - j) -
 			     lchoose(n, h));
@@ -293,7 +294,7 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 
   log_ad_step = (LOG_AD_MAX - LOG_AD_MIN)/(spline_pts + 1.);
 
-  if (sample_size > 800) {
+  if (0 && sample_size > 800) {
     omp_set_lock(&thread_lock);
     if (warned == 0) {
       logmsg(MSG_WARN,"sample depths are > 800, using splines to approximiate pjh "
@@ -427,7 +428,7 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
     }
 
     x[i] = log_ad;
-    logmsg(MSG_DEBUG1,"%5d %5d %5.2f %5.3f %5.3f %5.3f %5.3f", sample_size, i, x[i], p[0], p[1], p[sample_size-1],p[sample_size]);
+    logmsg(MSG_DEBUG1,"%5d %5d %5.2f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f", sample_size, i, x[i], p[0], p[1], p[2], p[sample_size/2], p[sample_size-2], p[sample_size-1],p[sample_size]);
   }
   logmsg(MSG_DEBUG1,"bgrnd %d %5.3f %5.3f %5.3f %5.3f", sample_size, fsp[0], fsp[1], fsp[sample_size-1], fsp[sample_size]);
 

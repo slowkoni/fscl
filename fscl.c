@@ -172,7 +172,7 @@ static void init_options() {
   prepend_label = NULL;
 
   bp_resl = 128;
-  eval_range = 8192;
+  eval_range = 81920;
 
   init_log_table();
 }

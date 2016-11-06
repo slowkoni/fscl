@@ -39,6 +39,7 @@ void init_log_table(void) {
    distance between two SNPs. */
 static double logt(int d) {
 
+  if (d < 0) d = -d;
   if (d > 0xFFFFFF) return 11.783502069519070 + log_table[d >> 16];
   if (d > 0xFFFF) return 5.545177444479562 + log_table[d >> 8 ];
   return log_table[d];
@@ -134,7 +135,7 @@ static void sm_likelihood(scan_pt_t *result, snp_t *snps, sm_ptable_t *sm_p) {
 
   i = result->nearest_snp+1;
   while(i<=result->window_end) {
-    log_ad = logt(snps[i].pos - result->sweep_pos) + result->lalpha;
+    log_ad = logt(abs(snps[i].pos - result->sweep_pos)) + result->lalpha;
     if (log_ad > LOG_AD_MAX) break;
     result->sm_logl += snp_likelihood(snps+i, log_ad, sm_p);
     i++;
