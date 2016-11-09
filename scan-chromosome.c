@@ -488,9 +488,9 @@ static void *scan_permute_thread(thread_args_t *args) {
 	if (scan_obj->scan_pts[my_scan_pt].permute_p >= 20) 
 	  scan_obj->scan_pts[my_scan_pt].permute_finished = 1;
       }
+      if (scan_obj->scan_pts[my_scan_pt].permute_n < CLR_NULL_DIST_SAVE)
+	scan_obj->scan_pts[my_scan_pt].permute_clr[scan_obj->scan_pts[my_scan_pt].permute_n] = max_pt.clr;
       scan_obj->scan_pts[my_scan_pt].permute_n++;
-      if (global_permute < CLR_NULL_DIST_SAVE)
-	scan_obj->scan_pts[my_scan_pt].permute_clr[global_permute] = max_pt.clr;
       if (max_pt.clr < 0 || max_pt.clr > 1000000 || isnan(max_pt.clr)) {
 	fprintf(stderr,"%d\t%d\t%g\t%1.3e\n",chr,start_pos,max_pt.clr, 
 		exp(max_pt.lalpha));
@@ -707,22 +707,22 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
     double pvalue, rsq;
     int j, k, n_pts;
 
-    MA(x, sizeof(double)*n_permute);
-    MA(y, sizeof(double)*n_permute);
+    MA(x, sizeof(double)*CLR_NULL_DIST_SAVE);
+    MA(y, sizeof(double)*CLR_NULL_DIST_SAVE);
 
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;
 
       if (s_pt->permute_p < 20) {
 	n_pts = s_pt->permute_n<CLR_NULL_DIST_SAVE?s_pt->permute_n:CLR_NULL_DIST_SAVE;
-	if (n_pts*0.8 > 100) {
+	if (n_pts*0.5 > 100) {
 	  qsort(s_pt->permute_clr, n_pts, sizeof(float), 
 		(void *) float_compare);
 
 	  tss = ymean = 0;
-	  j = n_pts*0.1 + 1;
+	  j = n_pts*0.5 + 1;
 	  k = 0;
-	  while(j<n_pts*0.9-1) {
+	  while(j<n_pts*0.95-1) {
 	    y[k] = log(1. - j/(double) s_pt->permute_n);
 	    x[k] = s_pt->permute_clr[j];
 	    tss += y[k]*y[k];
