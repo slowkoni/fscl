@@ -466,7 +466,7 @@ sm_ptable_t *compute_sweep_model_tables(scan_t *scan_obj, double **fsp,
   n_complete = 0;
   MA(sm_p, sizeof(sm_ptable_t)*scan_obj->n_depths);
 
-#pragma omp parallel for schedule(dynamic, 2)
+#pragma omp parallel for schedule(dynamic, 1)
   for(i=0;i<scan_obj->n_depths;i++) {
     if (asc_depth > 0) {
       asc = ascbias_adjust_background(fsp[i], scan_obj->sample_depths[i],

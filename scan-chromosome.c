@@ -17,6 +17,7 @@
 
 #include <kmacros.h>
 #include "fscl.h"
+#include "cdflib.h"
 
 extern gsl_rng *rng;
 
@@ -649,6 +650,11 @@ static int float_compare(float *a, float *b) {
   return 0;
 }
 
+static int double_compare(double *a, double *b) {
+  if (*a < *b) return -1;
+  if (*a > *b) return  1;
+  return 0;
+} 
 
 void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only, 
 		 int n_permute, char *prepend_label) {
@@ -703,55 +709,77 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
   }
 
   if (n_permute > 0) {
-    double *x, *y, tss, ymean, intercept, slope, cov00, cov01, cov11, rss;
-    double pvalue, rsq;
-    int j, k, n_pts;
+    double *p, *q, *x, pnonc, pvalue;
 
+    MA(p, sizeof(double)*CLR_NULL_DIST_SAVE);
+    MA(q, sizeof(double)*CLR_NULL_DIST_SAVE);
     MA(x, sizeof(double)*CLR_NULL_DIST_SAVE);
-    MA(y, sizeof(double)*CLR_NULL_DIST_SAVE);
-
+    pnonc = 0.0;
+    
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;
 
       if (s_pt->permute_p < 20) {
+	int j, n, n_pts;
+	
 	n_pts = s_pt->permute_n<CLR_NULL_DIST_SAVE?s_pt->permute_n:CLR_NULL_DIST_SAVE;
-	if (n_pts*0.5 > 100) {
-	  qsort(s_pt->permute_clr, n_pts, sizeof(float), 
-		(void *) float_compare);
-
-	  tss = ymean = 0;
-	  j = n_pts*0.5 + 1;
-	  k = 0;
-	  while(j<n_pts*0.95-1) {
-	    y[k] = log(1. - j/(double) s_pt->permute_n);
-	    x[k] = s_pt->permute_clr[j];
-	    tss += y[k]*y[k];
-	    ymean += y[k];
-	    k++;
-	    j++;
+	if (n_pts > 100) {
+	  int which, status;
+	  double df, bound;
+	  double pnonc_mean;
+	  
+	  for(j=0;j<n_pts;j++) {
+	    p[j] = j/(double) n_pts;
+	    x[j] = s_pt->permute_clr[j];
 	  }
-	  ymean /= k;
-	  tss = (tss/k - ymean*ymean)*k;
-	  gsl_fit_linear(x, 1, y, 1, k, &intercept, &slope, &cov00, &cov01,
-			 &cov11, &rss);
-	  rsq = 1.0 - rss/tss;
-	  pvalue = exp(intercept + slope*s_pt->clr);
+	  qsort(x, n_pts, sizeof(double), (void *) double_compare);
+
+	  pnonc_mean = 0.;
+	  n = 0;
+	  for(j=5;j<=10;j++) {
+	    n++;
+	    which = 4;
+	    df = 1.0;
+	    pnonc = 0.0;
+	    cdfchn(&which, p + (j/10*n_pts - 1), NULL, x + (j/10*n_pts - 1), &df, &pnonc, &status, &bound);
+	    pnonc_mean += pnonc;
+	  }
+	  pnonc /= n;
+	  
+	  if (status != 0) {
+	    fprintf(stderr,"Warning: cdfchn() returns status %d on estimation of "
+		    "non-centrality parameter for chisq distribution, bound value"
+		    " returned as %g\n", status, bound);
+	    pnonc = 0.0;
+	  }
+
+	  which = 1;
+	  df = 1.0;
+	  cdfchn(&which, p, q, &s_pt->clr, &df, &pnonc, &status, &bound);
+	  if (status != 0) {
+	    fprintf(stderr,"Warning: cdfchn() returns status %d on estimation of "
+		    "p-value for CLR %1.1f given estimated non-centrality parameter"
+		    "mu = %1.1f, bound value returned as %g\n", status, s_pt->clr,
+		    pnonc, bound);
+	    pvalue = (s_pt->permute_p + 1) /(double) (s_pt->permute_n + 1);
+	  } else {
+	    pvalue = q[0];
+	  }
 	} else {
-	  pvalue = s_pt->permute_p/(double) (s_pt->permute_n-1);
-	  rsq = 0.;
+	  pvalue = (s_pt->permute_p + 1)/(double) (s_pt->permute_n + 1);
 	}
       } else {
-	pvalue = (s_pt->permute_p-1)/(double) (s_pt->permute_n-1);
-	rsq = 1.0;
+	pvalue = (s_pt->permute_p + 1)/(double) (s_pt->permute_n + 1);
       }
       if (prepend_label) fprintf(out_f,"%s\t",prepend_label);
       fprintf(out_f,"%s\t%d\t%1.2f\t%1.3e\t%d\t%d\t%1.3e\t%1.3f\n", 
 	      scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos, 
 	      s_pt->clr, exp(s_pt->lalpha), s_pt->permute_p, s_pt->permute_n,
-	      pvalue, rsq);
+	      pvalue, pnonc);
     }
+    free(p);
+    free(q);
     free(x);
-    free(y);
   } else {
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;
