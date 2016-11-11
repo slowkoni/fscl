@@ -259,7 +259,7 @@ void search_maxalpha(scan_pt_t *result, snp_t *snps, sm_ptable_t *sm_p) {
   //  if (tmp_result.sm_logl < tmp_result.null_logl) 
   //  tmp_result.sm_logl = tmp_result.null_logl;
 
-  tmp_result.clr = tmp_result.sm_logl - tmp_result.null_logl;
+  tmp_result.clr = 2.0 * (tmp_result.sm_logl - tmp_result.null_logl);
 
   *result = tmp_result;
 }
@@ -295,7 +295,7 @@ void search_maxalpha(scan_pt_t *result, snp_t *snps, sm_ptable_t *sm_p) {
     if (tmp_result.sm_logl > max_result.sm_logl) max_result = tmp_result;
   }
 
-  max_result.clr = max_result.sm_logl - max_result.null_logl;
+  max_result.clr = 2.0 * (max_result.sm_logl - max_result.null_logl);
   *result = max_result;
 }
 #endif

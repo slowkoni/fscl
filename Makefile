@@ -1,6 +1,7 @@
 
 OBJ = fscl.o logmsg.o ms-input.o snp-input.o background-fsp.o sm-spline.o \
-	sm-search.o scan-chromosome.o asc-bias.o cmdline-utils.o ms-parser.o ms-scanner.o
+	sm-search.o scan-chromosome.o asc-bias.o cmdline-utils.o ms-parser.o \
+	ms-scanner.o cdflib.o
 CC=gcc
 CFLAGS=-Wall -ggdb -I ~/libs/include -m64 -O2 -march=native -fopenmp
 
