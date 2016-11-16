@@ -13,36 +13,8 @@
 #include "fscl.h"
 
 static omp_lock_t thread_lock;
-static double log_fact(int n) {
-  static int n_max = 0;
-  static double *lookup_table = NULL;
-  int i;
-
-  if (n < 0) return -DBL_MAX;
-
-  if (n == 0 || n == 1) return 0.;
-
-  if (n > n_max) {
-    RA(lookup_table, sizeof(double)*(n+1));
-    if (n_max == 0) {
-      lookup_table[0] = 0;
-      n_max = 1;
-    }
-    for(i=n_max;i<=n;i++)
-      lookup_table[i] = lookup_table[i-1] + log(i);
-    n_max = n;
-  }
-  
-  return lookup_table[n];
-}
-
-double lchoose(int n, int k) {
-
-  if (n == 0 && k == 0) return 0.;
-  if (k > n || n == 0) return -DBL_MAX;
-  return log_fact(n) - log_fact(k) - log_fact(n-k);
-}
-
+extern double lchoose(int, int);
+extern double log_fact(int);
 
 static double **neutral_spectra(scan_t *scan_obj) {
   int n_invariant, n_fixed, n_segregating, i, k, m;
