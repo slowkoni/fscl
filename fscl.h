@@ -111,7 +111,7 @@ void scan_chromosome(scan_t *scan_obj, sm_ptable_t *sm_p, int eval_range,
 void scan_permute(scan_t *scan_obj, sm_ptable_t *sm_p,
 		  int n_permute, double permute_nbp, double alpha_factor, 
 		  int n_threads, int eval_range, int bp_resl, 
-		  int large_grid_sp);
+		  int large_grid_sp, double scan_width_mb);
 void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only, 
 		 int n_permute, char *prepend_label);
 

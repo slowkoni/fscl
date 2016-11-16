@@ -17,7 +17,6 @@
 
 #include <kmacros.h>
 #include "fscl.h"
-#include "cdflib.h"
 
 extern gsl_rng *rng;
 
@@ -180,9 +179,9 @@ static void *scan_thread(scan_args_t *args) {
 
     if (args->scan_pos >= scan_obj->chr_limits[args->scan_chm].bp_length) {
       args->scan_chm++;
-      args->scan_pos = scan_obj->chr_limits[args->scan_chm].start_pos;
-            
+
       if (args->scan_chm == scan_obj->n_chromosomes) break;
+      args->scan_pos = scan_obj->chr_limits[args->scan_chm].start_pos;
     }
 
     start_pos = args->scan_pos;
@@ -335,7 +334,7 @@ static FILE *rfile;
 #endif
 
 static void snp_block_permute(snp_t *p_snps, snp_t *snps, int n_snps, 
-			      double permute_nbp) {
+			      double permute_nbp, double scan_width_mb) {
   int i, j, k, __attribute__((unused))*already_permuted;
   snp_t tmp;
 
@@ -349,19 +348,21 @@ static void snp_block_permute(snp_t *p_snps, snp_t *snps, int n_snps,
     //    while(i<n_snps && already_permuted[i]) i++;
     //if (i == n_snps) break;
     j = rand()/(RAND_MAX + 1.0) * n_snps;
-    k = 2 + (int) (-1.0/permute_nbp * log(rand()/(RAND_MAX + 1.0)));
+    k = j + (int) (-1.0/permute_nbp * log(rand()/(RAND_MAX + 1.0)));
     //k = 1 + gsl_ran_lognormal(rng, -0.2027, 1.3386);
 #ifdef LN_DEBUG
     pthread_mutex_lock(&nd_update_lock);
     fprintf(rfile, "%d\n", k);
     pthread_mutex_unlock(&nd_update_lock);
 #endif
-    k = k + j;
-    //    k = j + 20 + (int) (-1.0/permute_nbp * log(rand()/(RAND_MAX + 1.0)));
-    if (k >= n_snps) k = n_snps;
-    if (i + (k - j) >= n_snps) k = n_snps - i;
+    while(k < n_snps && snps[k].chr == snps[j].chr && snps[k].pos - snps[j].pos < scan_width_mb*1e6) k++;
+    if (i + (k - j) >= n_snps) k = n_snps;
+    if (k > n_snps) {
+      j = n_snps - k;
+      k = n_snps;
+    }
 
-    while(j<k) {
+    while(j<k && i < n_snps && j < n_snps) {
       tmp.obs_freq = p_snps[i].obs_freq;
       tmp.depth_p = p_snps[i].depth_p;
       tmp.folded = p_snps[i].folded;
@@ -399,6 +400,7 @@ typedef struct {
   int eval_range;
   int bp_resl;
   int large_grid_sp;
+  double scan_width_mb;
 } thread_args_t;
 
 static int global_permute, global_scan_pt, n_remaining, n_global_scan_pts;
@@ -418,9 +420,9 @@ static void *scan_permute_thread(thread_args_t *args) {
   scan_t *scan_obj;
   sm_ptable_t *sm_p;
   int n_permute;
-  double permute_nbp;
+  double permute_nbp, scan_width_mb;
   snp_t *p_snps;
-
+  
   /* unpack full set of arguments from the structure used to pass through
      pthread_create() */
   scan_obj = args->scan_obj;
@@ -428,16 +430,17 @@ static void *scan_permute_thread(thread_args_t *args) {
 
   n_permute = args->n_permute;
   permute_nbp = args->permute_nbp;
+  scan_width_mb = args->scan_width_mb;
 
   p_snps = args->p_snps;
   large_grid_sp = args->large_grid_sp;
   n_snps = scan_obj->n_snps;
-
+  
   my_permute_index = 0;
   usleep((int) (rand()/(RAND_MAX+1.0)*10000));
   for(;;) {
     if (pthread_barrier_wait(&permute_barrier)==PTHREAD_BARRIER_SERIAL_THREAD) {
-      snp_block_permute(p_snps, scan_obj->snps, n_snps, permute_nbp);
+      snp_block_permute(p_snps, scan_obj->snps, n_snps, permute_nbp, scan_width_mb);
       global_permute++;
 
       k = i = 0;
@@ -453,17 +456,15 @@ static void *scan_permute_thread(thread_args_t *args) {
       n_global_scan_pts = k;
       global_scan_pt = 0;
 
-      if (n_global_scan_pts == 0) {
-	pthread_barrier_wait(&run_barrier);
-	return NULL;
-      }
-      cr_logmsg(MSG_STATUS,"Scanning snp block permutations... %7d (%8d "
-		"scan pts remaining)", global_permute, n_global_scan_pts);
-    }    
+      cr_logmsg(MSG_STATUS,"Scanning snp block permutations... %7d (%d "
+		"scan pts remaining)        ", global_permute, n_global_scan_pts);
+    }
+    pthread_barrier_wait(&permute_barrier);
 
-    pthread_barrier_wait(&run_barrier);
-    if (n_global_scan_pts == 0) return NULL;
-    if (global_permute > n_permute) return NULL;
+    pthread_mutex_lock(&scan_pt_lock);
+    if (n_global_scan_pts == 0) break;
+    if (global_permute > n_permute) break;
+    pthread_mutex_unlock(&scan_pt_lock);
 
     for(;;) {
       int chr, start_pos, __attribute__((unused))current_pos;
@@ -486,9 +487,12 @@ static void *scan_permute_thread(thread_args_t *args) {
 
       if (max_pt.clr >= scan_obj->scan_pts[my_scan_pt].clr) {
 	scan_obj->scan_pts[my_scan_pt].permute_p++;
-	if (scan_obj->scan_pts[my_scan_pt].permute_p >= 20) 
+	if (scan_obj->scan_pts[my_scan_pt].permute_p >= 20 &&
+	    scan_obj->scan_pts[my_scan_pt].permute_p /(double)
+	    scan_obj->scan_pts[my_scan_pt].permute_n >= rand()/(RAND_MAX + 1.0)) 
 	  scan_obj->scan_pts[my_scan_pt].permute_finished = 1;
       }
+      
       if (scan_obj->scan_pts[my_scan_pt].permute_n < CLR_NULL_DIST_SAVE)
 	scan_obj->scan_pts[my_scan_pt].permute_clr[scan_obj->scan_pts[my_scan_pt].permute_n] = max_pt.clr;
       scan_obj->scan_pts[my_scan_pt].permute_n++;
@@ -537,6 +541,8 @@ static void *scan_permute_thread(thread_args_t *args) {
     }
   }
 
+  pthread_mutex_unlock(&scan_pt_lock);
+  return NULL;
 }
 
 static struct timeval stop_watch;
@@ -577,7 +583,7 @@ void scan_permute(scan_t *scan_obj, sm_ptable_t *sm_p,
 		  int n_permute, double permute_nbp, 
 		  double alpha_factor, 
 		  int n_threads, int eval_range, int bp_resl, 
-		  int large_grid_sp) {
+		  int large_grid_sp, double scan_width_mb) {
   int i;
   thread_args_t args;
   pthread_t *threads;
@@ -610,7 +616,8 @@ void scan_permute(scan_t *scan_obj, sm_ptable_t *sm_p,
   args.large_grid_sp = large_grid_sp;
   args.eval_range = eval_range;
   args.bp_resl = bp_resl;
-
+  args.scan_width_mb = scan_width_mb;
+  
   MA(args.p_snps, sizeof(snp_t)*scan_obj->n_snps);
 
   MA(global_scan_pts, sizeof(int)*scan_obj->n_scan_pts);
@@ -633,7 +640,7 @@ void scan_permute(scan_t *scan_obj, sm_ptable_t *sm_p,
 
   for(i=0;i<n_threads;i++) pthread_join(threads[i], NULL);
 
-  logmsg(MSG_STATUS,"Scanning snp block permutations... finished\n");
+  cr_logmsg(MSG_STATUS,"Scanning snp block permutations... finished.\n");
   pthread_mutex_destroy(&scan_pt_lock);
   pthread_barrier_destroy(&permute_barrier);
   pthread_barrier_destroy(&run_barrier);
@@ -644,13 +651,13 @@ void scan_permute(scan_t *scan_obj, sm_ptable_t *sm_p,
 #endif
 }
 
-static int float_compare(float *a, float *b) {
+static int __attribute__((unused))float_compare(float *a, float *b) {
   if (*a < *b) return -1;
   if (*a > *b) return  1;
   return 0;
 }
 
-static int double_compare(double *a, double *b) {
+static int __attribute__((unused))double_compare(double *a, double *b) {
   if (*a < *b) return -1;
   if (*a > *b) return  1;
   return 0;
@@ -694,7 +701,7 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
     sprintf(pos_str, "chromosome %s %d bp", 
 	    scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos);
   }
-  logmsg(MSG_STATUS,"\rScan finished -- maximum CLR of %g at %s "
+  logmsg(MSG_STATUS,"\rOutput complete -- maximum CLR of %g at %s "
 	 "(alpha = %g)\n", max_clr, pos_str, exp(s_pt->lalpha));
 
   if (maximum_only) {
@@ -709,77 +716,19 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
   }
 
   if (n_permute > 0) {
-    double *p, *q, *x, pnonc, pvalue;
-
-    MA(p, sizeof(double)*CLR_NULL_DIST_SAVE);
-    MA(q, sizeof(double)*CLR_NULL_DIST_SAVE);
-    MA(x, sizeof(double)*CLR_NULL_DIST_SAVE);
-    pnonc = 0.0;
+    double pvalue;
     
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;
 
-      if (s_pt->permute_p < 20) {
-	int j, n, n_pts;
-	
-	n_pts = s_pt->permute_n<CLR_NULL_DIST_SAVE?s_pt->permute_n:CLR_NULL_DIST_SAVE;
-	if (n_pts > 100) {
-	  int which, status;
-	  double df, bound;
-	  double pnonc_mean;
-	  
-	  for(j=0;j<n_pts;j++) {
-	    p[j] = j/(double) n_pts;
-	    x[j] = s_pt->permute_clr[j];
-	  }
-	  qsort(x, n_pts, sizeof(double), (void *) double_compare);
+      pvalue = (s_pt->permute_p + 0.5)/(double) (s_pt->permute_n + 0.5);
 
-	  pnonc_mean = 0.;
-	  n = 0;
-	  for(j=5;j<=10;j++) {
-	    n++;
-	    which = 4;
-	    df = 1.0;
-	    pnonc = 0.0;
-	    cdfchn(&which, p + (j/10*n_pts - 1), NULL, x + (j/10*n_pts - 1), &df, &pnonc, &status, &bound);
-	    pnonc_mean += pnonc;
-	  }
-	  pnonc /= n;
-	  
-	  if (status != 0) {
-	    fprintf(stderr,"Warning: cdfchn() returns status %d on estimation of "
-		    "non-centrality parameter for chisq distribution, bound value"
-		    " returned as %g\n", status, bound);
-	    pnonc = 0.0;
-	  }
-
-	  which = 1;
-	  df = 1.0;
-	  cdfchn(&which, p, q, &s_pt->clr, &df, &pnonc, &status, &bound);
-	  if (status != 0) {
-	    fprintf(stderr,"Warning: cdfchn() returns status %d on estimation of "
-		    "p-value for CLR %1.1f given estimated non-centrality parameter"
-		    "mu = %1.1f, bound value returned as %g\n", status, s_pt->clr,
-		    pnonc, bound);
-	    pvalue = (s_pt->permute_p + 1) /(double) (s_pt->permute_n + 1);
-	  } else {
-	    pvalue = q[0];
-	  }
-	} else {
-	  pvalue = (s_pt->permute_p + 1)/(double) (s_pt->permute_n + 1);
-	}
-      } else {
-	pvalue = (s_pt->permute_p + 1)/(double) (s_pt->permute_n + 1);
-      }
       if (prepend_label) fprintf(out_f,"%s\t",prepend_label);
-      fprintf(out_f,"%s\t%d\t%1.2f\t%1.3e\t%d\t%d\t%1.3e\t%1.3f\n", 
+      fprintf(out_f,"%s\t%d\t%1.2f\t%1.3e\t%d\t%d\t%1.3f\n", 
 	      scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos, 
 	      s_pt->clr, exp(s_pt->lalpha), s_pt->permute_p, s_pt->permute_n,
-	      pvalue, pnonc);
+	      -log10(pvalue));
     }
-    free(p);
-    free(q);
-    free(x);
   } else {
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;

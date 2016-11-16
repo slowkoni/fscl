@@ -213,6 +213,10 @@ static void validate_options() {
 	   "both.\n");
     stop = 1;
   }
+  if (output_fname == NULL) {
+    logmsg(MSG_ERROR,"Specify an output file name with -o option\n");
+    stop = 1;
+  }
   if (ms_segment_length && ms_fname==NULL) {
     logmsg(MSG_WARN,"Warning: --ms-segment-length option ignored if -m "
 	   "option is not used.\n");
@@ -298,7 +302,7 @@ int main(int argc, char *argv[]) {
 			  n_threads);
 	  if (n_permute > 0)
 	    scan_permute(scan_obj, sm_p, n_permute, permute_nbp, alpha_factor, 
-			 n_threads, eval_range, bp_resl, large_grid_sp);
+			 n_threads, eval_range, bp_resl, large_grid_sp, scan_width_mb);
 
 	  scan_output(output_fname, scan_obj, maximum_only, n_permute, 
 		      prepend_label);
@@ -325,7 +329,7 @@ int main(int argc, char *argv[]) {
 		      n_threads);
       if (n_permute > 0) 
 	scan_permute(scan_obj, sm_p, n_permute, permute_nbp, alpha_factor, 
-		     n_threads, eval_range, bp_resl, large_grid_sp);
+		     n_threads, eval_range, bp_resl, large_grid_sp, scan_width_mb);
 
       scan_output(output_fname, scan_obj, maximum_only, n_permute, 
 		  prepend_label);
