@@ -1,11 +1,12 @@
 
 OBJ = fscl.o logmsg.o ms-input.o snp-input.o background-fsp.o sm-spline.o \
 	sm-search.o scan-chromosome.o asc-bias.o cmdline-utils.o ms-parser.o \
-	ms-scanner.o cdflib.o
-CC=gcc
-CFLAGS=-Wall -ggdb -I ~/libs/include -m64 -O2 -march=native -fopenmp
+	ms-scanner.o
 
-LD_FLAGS=-m64 -fopenmp -L${HOME}/libs/lib -lm -lpthread -lgsl -lgslcblas
+CC=gcc
+CFLAGS?=-Wall -ggdb -I . -m64 -O2 -march=native -fopenmp
+
+LD_FLAGS?=-m64 -fopenmp -lm -lpthread -lgsl -lgslcblas
 
 YACC=bison
 LEX=flex

@@ -44,7 +44,7 @@ void cr_logmsg(int priority, volatile char *s, ...) {
     vsnprintf(long_string , MAX_LOGMSG_LENGTH, (char *) s, ap);
     va_end(ap);
     
-    fprintf(stderr, "\r%-79.79s", long_string);      
+    fprintf(stderr, "\33[2K\r%-79.79s", long_string);
   } 
   pthread_mutex_unlock(&logmsg_lock);
 
