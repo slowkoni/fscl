@@ -721,8 +721,12 @@ void scan_output(char *output_fname, scan_t *scan_obj, int maximum_only,
     for(i=0;i<scan_obj->n_scan_pts;i++) {
       s_pt = scan_obj->scan_pts + i;
 
-      pvalue = (s_pt->permute_p + 0.5)/(double) (s_pt->permute_n + 0.5);
-
+      if (s_pt->permute_p < 2) {
+	pvalue = 1.0/s_pt->permute_n;
+      } else {
+	pvalue = (s_pt->permute_p - 1.0)/(double) (s_pt->permute_n - 1.0);
+      }
+      
       if (prepend_label) fprintf(out_f,"%s\t",prepend_label);
       fprintf(out_f,"%s\t%d\t%1.2f\t%1.3e\t%d\t%d\t%1.3f\n", 
 	      scan_obj->chr_limits[s_pt->chr].name, s_pt->sweep_pos, 
