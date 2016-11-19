@@ -16,13 +16,13 @@ enum { OPTION_STRINGTYPE = 0, OPTION_INTTYPE, OPTION_DOUBLETYPE, OPTION_FLAGTYPE
 
 
 typedef struct {
-  char shortopt;
-  char *longopt;
+  const char shortopt;
+  const char *longopt;
   void *var;
   int type;
   int required;
   int argument_required;
-  char *docstring;
+  const char *docstring;
 } option_t;
 
 int cmdline_getoptions(option_t *options, int argc, char *argv[]);

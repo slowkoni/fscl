@@ -11,7 +11,9 @@
 
 
 #include "msparser.h"
-
+#ifdef __cplusplus
+extern "C" {
+#endif
   int msget_lineno(yyscan_t);
   char *msget_text(yyscan_t);
 
@@ -24,10 +26,14 @@ static void mserror(msblock_t **msb_unused, yyscan_t ms_scanner, int stemp_ptr,
 		    int htemp_ptr, int dtemp_ptr, int stemp_size, 
 		    int htemp_size, int dtemp_size, double *dtemp, segment_t *stemp, char **htemp, char *error_msg);
 void mslex_init(yyscan_t yyscanner);
-
 #define STEMP_ALLOC_STEP (2)
 #define HTEMP_ALLOC_STEP (2)
 #define DTEMP_ALLOC_STEP (2)
+
+#ifdef __cplusplus
+}
+#endif
+
 %}
 
 %define api.pure
@@ -247,6 +253,9 @@ integer: INTEGER { $$ = atoi(mstext); }
 
 %%
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 static void mserror(msblock_t **msb_unused, yyscan_t ms_scanner, int stemp_ptr,
 		    int htemp_ptr, int dtemp_ptr, int stemp_size, 
 		    int htemp_size, int dtemp_size, double *dtemp, segment_t *stemp, char **htemp, char *error_msg) {
@@ -460,3 +469,6 @@ sfs_summary_t *sfs_summaries(int *sfs, int n) {
 }
  
  
+#ifdef __cplusplus
+}
+#endif

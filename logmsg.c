@@ -17,7 +17,7 @@ void configure_logmsg(int level) {
 }
 
 /* Selective verbosity capabilities -- adapted from SLAN code */
-void logmsg(int priority, volatile char *s, ...) {
+void logmsg(int priority, const char *s, ...) {
   va_list ap;
   char long_string[MAX_LOGMSG_LENGTH];
 
@@ -34,7 +34,7 @@ void logmsg(int priority, volatile char *s, ...) {
   if (priority == MSG_FATAL) exit(1);
 }
 
-void cr_logmsg(int priority, volatile char *s, ...) {
+void cr_logmsg(int priority, const char *s, ...) {
   va_list ap;
   char long_string[MAX_LOGMSG_LENGTH];
 

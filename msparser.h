@@ -1,6 +1,6 @@
 #ifndef MSPARSER_H
 #define MSPARSER_H
-#include <kmacros.h>
+#include "kmacros.h"
 
 typedef struct tree {
   double length; /* Length of branch from parent to this node */
@@ -42,7 +42,9 @@ typedef struct {
 typedef void* yyscan_t;
 #endif
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 yyscan_t msparser_setfile(FILE *);
 msblock_t *msparser_block();
 void msparser_block_free(msblock_t *);
@@ -50,5 +52,7 @@ FILE *msparser_execute(char *ms_cmd);
 int *msblock_sfs(msblock_t *msb, int s_index, int n);
 sfs_summary_t *sfs_summaries(int *sfs, int n);
 double *msblock_fsbranch_lengths(msblock_t *msb, int s_index, int n);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

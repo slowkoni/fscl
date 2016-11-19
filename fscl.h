@@ -132,7 +132,7 @@ void ascbias_adjust_expect(double *fsp, int n, int min_obs, int d);
 enum { MSG_FATAL = 0, MSG_ERROR, MSG_WARN, MSG_STATUS, MSG_DEBUG1, MSG_DEBUG2 };
 
 void configure_logmsg(int level);
-void logmsg(int priority, volatile char *s, ...);
-void cr_logmsg(int priority, volatile char *s, ...);
+void logmsg(int priority, const char *s, ...);
+void cr_logmsg(int priority, const char *s, ...);
 
 #endif

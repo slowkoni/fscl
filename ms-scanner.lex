@@ -2,7 +2,9 @@
 
 #include "msparser.h"
 #include "ms-parser.h"
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 %}
 %option reentrant bison-bridge yylineno noyywrap
 %x MS_BLOCK
@@ -44,3 +46,7 @@ yyscan_t msparser_setfile(FILE *f) {
   BEGIN(EAT);
   return ms_scanner;
 }
+
+#ifdef __cplusplus
+ }
+#endif
