@@ -1,3 +1,4 @@
+/* (c) 2007-2016 Mark Hamilton Wright */
 #ifndef KMACROS_H
 #define KMACROS_H
 #include <stdio.h>
@@ -10,17 +11,17 @@
 #include <sys/time.h>
 
 #ifndef MA
-#define MA(p,s)       {                 \
-(p) = malloc((s));   \
-if ((p) == NULL) {  \
-  fprintf(stderr,"Failed allocating memory at %s:%d (%1.1f Mb)\n", \
+#define MA(p,s)       {			\
+    (p) = malloc((s));		\
+    if ((p) == NULL) {						   \
+      fprintf(stderr,"Failed allocating memory at %s:%d (%1.1f Mb)\n",	\
 	  __FILE__,__LINE__, (s)/1e6);				    \
-  abort();							    \
-}\
+      abort();							    \
+    }								    \
 }
 
-#define CA(p,s)	 {			\
-    (p) = malloc(s);			\
+#define CA(p,s)	 {		\
+    (p) = malloc((s));			\
 if ((p) == NULL) {  \
   fprintf(stderr,"Failed allocating memory at %s:%d (%1.1f Mb)\n", \
 	  __FILE__,__LINE__, (s)/1e6);				    \
@@ -29,8 +30,8 @@ if ((p) == NULL) {  \
     memset((p), 0x0, (s)); \
 }
 
-#define RA(p,s)           {                     \
-(p) = realloc((p),(s));   \
+#define RA(p,s)           {			\
+    (p) = realloc((p),(s));	\
 if ((p) == NULL) {  \
   fprintf(stderr,"Failed allocating memory at %s:%d (%1.1f Mb)\n", \
 	  __FILE__,__LINE__, (s)/1e6);				    \
@@ -49,7 +50,7 @@ if ((p) == NULL) {  \
 #define FWRITE(p, s, n, f) if (fwrite((p), (s), (n), (f)) < (n)) { fprintf(stderr,"Warning: fwrite() returned short write at %s:%d\n",__FILE__,__LINE__); }
 
 
-#define WHEREARGS char *callfunc, char *callfile, char *callline
+#define WHEREARGS const char *callfunc, const char *callfile, int callline
 #define WHEREFROM __func__, __FILE__, __LINE__
 
 #ifndef FOPEN
@@ -73,6 +74,7 @@ static FILE *k_fopen(char *fname, char *mode, int exit_on_error) {
 }
 #endif
 
+#if 0
 typedef union {
   char ch;
   char *str;
@@ -196,7 +198,8 @@ static void sf_destroy(splitfield_t *sf) {
   free(sf->tf);
   free(sf);	    
 }
-
+#endif
+ 
 static double __attribute__((unused))elapsed_time_ms(struct timeval *ref_time) {
   struct timeval now;
 
