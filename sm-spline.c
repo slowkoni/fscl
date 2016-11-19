@@ -8,7 +8,7 @@
 #include <float.h>
 #include <omp.h>
 
-#include <kmacros.h>
+#include "kmacros.h"
 #include "fscl.h"
 
 static omp_lock_t thread_lock;
@@ -313,11 +313,17 @@ static double **pjh_use_splines(double *fsp, int n) {
   return pjh;
 }
 
+#ifdef CUDA
+void cuda_calculate_pjh(double *, double *, double *, int);
+double *cuda_pjh_init_tables(int);
+static double *cu_lft = NULL;
+#endif
+
 sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 				    int asc_depth, int asc_min_freq,
 				    int ascbias_background_only,
 				    int include_invariant) {
-  int b, h, i, j, k, q, f;
+  int b, i, j, k, q, f;
   double **pjh, **pbk, *x, **y, **fy, *p, p_sum;
   sm_ptable_t sm_ptable;
   static int warned = 0;
@@ -334,10 +340,16 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
     omp_unset_lock(&thread_lock);    
     pjh = pjh_use_splines(fsp, sample_size);
   } else {
+    struct timeval stopwatch;
+    gettimeofday(&stopwatch, NULL);
+    fprintf(stderr,"Computing pjh[][] for sample size %d\n", sample_size);
     MA(pjh, sizeof(double *)*(sample_size + 1));
     MA(pjh[0], sizeof(double)*((sample_size+1)*(sample_size+1)));
+    for(j=0;j<=sample_size;j++)
+       pjh[j] = pjh[0] + j*(sample_size+1);
+#ifndef CUDA
     for(j=0;j<=sample_size;j++) {
-      pjh[j] = pjh[0] + j*(sample_size+1);
+      int h;
       
       for(h=0;h<=sample_size;h++) {
 	pjh[j][h] = 0.;
@@ -349,6 +361,12 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 	}
       }
     }
+#else
+    cuda_calculate_pjh(pjh[0], fsp, cu_lft, sample_size);
+#endif
+    
+    fprintf(stderr,"Done computing pjh[][] for sample size %d (%1.1f sec)\n",
+	    sample_size, elapsed_time(&stopwatch));
   }
 
   MA(pbk, sizeof(double *)*(sample_size+1));
@@ -490,12 +508,19 @@ sm_ptable_t *compute_sweep_model_tables(scan_t *scan_obj, double **fsp,
   int i;
   sm_ptable_t *sm_p;
   double *asc;
-  int n_complete;
+  int n_complete, max_depth;
   
   omp_init_lock(&thread_lock);
   n_complete = 0;
   MA(sm_p, sizeof(sm_ptable_t)*scan_obj->n_depths);
-
+  max_depth = scan_obj->sample_depths[0];
+  for(i=0; i < scan_obj->n_depths; i++)
+    if (max_depth < scan_obj->sample_depths[i]) max_depth = scan_obj->sample_depths[i];
+  
+#ifdef CUDA
+  cu_lft = cuda_pjh_init_tables(max_depth+1);
+#endif
+  
 #pragma omp parallel for schedule(dynamic, 1)
   for(i=0;i<scan_obj->n_depths;i++) {
     if (asc_depth > 0) {

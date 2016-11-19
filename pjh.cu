@@ -8,6 +8,8 @@
 #include "kmacros.h"
 #include "cuda-macros.h"
 
+extern "C" {
+
 __device__ double cuda_lchoose(double *cu_lft, int n, int k) {
 
   if (k < 0) return -DBL_MAX;
@@ -18,7 +20,7 @@ __device__ double cuda_lchoose(double *cu_lft, int n, int k) {
   //return lgamma((double) n+1) - (lgamma((double) k+1) + lgamma((double) (n-k+1)));
 }
 
-double lchoose(double *lft, int n, int k) {
+  static double __attribute__((unused))lchoose(double *lft, int n, int k) {
   if (k < 0) return -DBL_MAX;
   if (n == 0 && k == 0) return 0;
   if (k > n || n == 0) return -DBL_MAX;
@@ -218,3 +220,5 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 #endif
+
+}
