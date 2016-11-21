@@ -60,10 +60,10 @@ __global__ void cuda_pbk(double *pbk, double *pjh, int sample_size) {
     pbk[b*(sample_size+1) + k] += pjh[b*(sample_size+1) + k+1]*((k+1.-b)/(k+1.));
   }
 }
-   
-void cuda_calculate_pjh(double *pjh, double *fsp, double *cu_lft, int sample_size) {
+
+void cuda_calculate_pbk(double *pjh, double *pbk, double *fsp, double *cu_lft, int sample_size) {
   int n = sample_size;
-  double *cu_pjh, *cu_pbk, *pbk;
+  double *cu_pjh, *cu_pbk;
   double *cu_fsp;
   
 
@@ -74,20 +74,20 @@ void cuda_calculate_pjh(double *pjh, double *fsp, double *cu_lft, int sample_siz
   CUDA_MA(cu_pjh, sizeof(double)*(n+1)*(n+1));
   CUDA_MEMCPY_TO(cu_pjh, pjh, sizeof(double)*(n+1)*(n+1));
 
-  MA(pbk, (n+1)*(n+1), double);
   memset(pbk, 0x0, sizeof(double)*(n+1)*(n+1));
   CUDA_MA(cu_pbk, sizeof(double)*(n+1)*(n+1));
-  CUDA_MEMCPY_TO(cu_pbk, pjh, sizeof(double)*(n+1)*(n+1));
+  CUDA_MEMCPY_TO(cu_pbk, pbk, sizeof(double)*(n+1)*(n+1));
 
   dim3 dimBlock(8,8);
   dim3 dimGrid((n+1)/dimBlock.x + 1, (n+1)/dimBlock.y + 1);
   cuda_pjh<<<dimGrid, dimBlock>>>(cu_pjh, cu_fsp, cu_lft, sample_size);
-
-#if 1
-  cuda_pbk<<<dimGrid, dimBlock>>>(cu_pbk, cu_pjh, sample_size);
-#endif
-
   CUDA_MEMCPY_FROM(pjh, cu_pjh, sizeof(double)*(n+1)*(n+1));
+
+  {
+    dim3 dimBlock(8,8);
+    dim3 dimGrid((n+1)/dimBlock.x + 1, (n+1)/dimBlock.y + 1);
+    cuda_pbk<<<dimGrid, dimBlock>>>(cu_pbk, cu_pjh, sample_size);
+  }
   CUDA_MEMCPY_FROM(pbk, cu_pbk, sizeof(double)*(n+1)*(n+1));
   
   CUDA_FREE(cu_pbk);
@@ -118,6 +118,38 @@ double *cuda_pjh_init_tables(int n) {
   return mk_log_factorial_table(NULL, n);
 }
 
+void cpu_calculate_pbk(double **pjh, double **pbk, double *fsp, double *lft, int sample_size) {
+  int i, j, h, b, k, q;
+  
+  for(j=0;j<=sample_size;j++) {      
+    for(h=0;h<=sample_size;h++) {
+      pjh[j][h] = 0.;
+      
+      for(i=j;i<=sample_size;i++) {
+	pjh[j][h] += fsp[i]*exp(lchoose(lft, i,j) + 
+				lchoose(lft, sample_size - i, h - j) -
+				lchoose(lft, sample_size, h));
+      }
+    }
+  }
+
+  for(b=0;b<=sample_size;b++) {
+    for(k=0;k<sample_size;k++) {
+      q = b - (sample_size - k) + 1;
+      if (q > 0) {
+	pbk[b][k] += pjh[q][k+1]*(q/(double) (k+1));
+      }
+      if (b < k+1) {
+	pbk[b][k] += pjh[b][k+1]*((k+1-b)/(double) (k+1));
+      }
+    }
+  }
+
+}
+
+#ifdef __cplusplus
+}
+#endif
 #ifdef UNIT_TEST
 static double *neutral_fsp(int n) {
   int i;
@@ -139,28 +171,11 @@ static double *neutral_fsp(int n) {
   return fsp;
 }
 
-void cpu_calculate_pjh(double **pjh, double *fsp, double *lft, int sample_size) {
-  int i, j, h;
-  
-  for(j=0;j<=sample_size;j++) {      
-    for(h=0;h<=sample_size;h++) {
-      pjh[j][h] = 0.;
-      
-      for(i=j;i<=sample_size;i++) {
-	pjh[j][h] += fsp[i]*exp(lchoose(lft, i,j) + 
-				lchoose(lft, sample_size - i, h - j) -
-				lchoose(lft, sample_size, h));
-      }
-    }
-  }
-
-}
-
 int main(int argc, char *argv[]) {
-  double **pjh_gpu, **pjh_cpu;
+  double **pjh_gpu, **pjh_cpu, **pbk_gpu, **pbk_cpu;
   double *cu_lft, *lft, *fsp;
   double cpu_ms, gpu_ms;
-  int sample_size, i, j, h;
+  int sample_size, i, j, h, b, k;
   struct timeval stopwatch_gpu, stopwatch_cpu;
   
   if (argc < 2) {
@@ -176,22 +191,29 @@ int main(int argc, char *argv[]) {
   CA(pjh_gpu[0], (sample_size+1)*(sample_size+1), double);
   MA(pjh_cpu, sample_size+1, double *);
   CA(pjh_cpu[0], (sample_size+1)*(sample_size+1), double);
+
+  MA(pbk_gpu, sample_size+1, double *);
+  CA(pbk_gpu[0], (sample_size+1)*(sample_size+1), double);
+  MA(pbk_cpu, sample_size+1, double *);
+  CA(pbk_cpu[0], (sample_size+1)*(sample_size+1), double);
   for(i=1; i<=sample_size; i++) {
     pjh_gpu[i] = pjh_gpu[i-1] + (sample_size+1);
+    pbk_gpu[i] = pbk_gpu[i-1] + (sample_size+1);
     pjh_cpu[i] = pjh_cpu[i-1] + (sample_size+1);
+    pbk_cpu[i] = pbk_cpu[i-1] + (sample_size+1);
   }
   
-  fprintf(stderr,"Computing pjh[][] for sample size %d -   ", sample_size);
+  fprintf(stderr,"Computing pbk[][] for sample size %d -   ", sample_size);
 
   fprintf(stderr,"GPU: ");
   gettimeofday(&stopwatch_gpu, NULL);
-  cuda_calculate_pjh(pjh_gpu[0], fsp, cu_lft, sample_size);
+  cuda_calculate_pbk(pjh_gpu[0], pbk_gpu[0], fsp, cu_lft, sample_size);
   gpu_ms = elapsed_time_ms(&stopwatch_gpu);
   fprintf(stderr," %1.1f ms", gpu_ms);
 
   fprintf(stderr,"\tCPU: ");
   gettimeofday(&stopwatch_cpu, NULL);
-  cpu_calculate_pjh(pjh_cpu, fsp, lft, sample_size);
+  cpu_calculate_pbk(pjh_cpu, pbk_cpu, fsp, lft, sample_size);
   cpu_ms = elapsed_time_ms(&stopwatch_cpu);
   fprintf(stderr," %1.1f ms\n", cpu_ms);
 
@@ -204,8 +226,22 @@ int main(int argc, char *argv[]) {
     }
   }
   pjh_error /= (sample_size+1)*(sample_size+1);
-  fprintf(stderr,"Average %% deviance of GPU calculation from CPU calculation: %g\n",
+
+  double pbk_error = 0.;
+  for(b=0; b <= sample_size; b++) {
+    for(k=0; k <= sample_size; k++) {
+      pbk_error += fabs(pbk_cpu[b][k] - pbk_gpu[b][k])/(pbk_cpu[b][k] + DBL_EPSILON);
+      /*      fprintf(stdout,"%d\t%d\t%1.5f\t%1.5f\t%1.5f\t%1.5f%%\n", b, k, fsp[h],
+	      pbk_cpu[b][k], pbk_gpu[b][k],
+	      (pbk_cpu[b][k] - pbk_gpu[b][k])/(pbk_cpu[b][k]+DBL_EPSILON)*100.);*/
+    }
+  }
+  pbk_error /= (sample_size+1)*(sample_size+1);
+  
+  fprintf(stderr,"pjh[][] average %% deviance of GPU calculation from CPU calculation: %g\n",
 	  pjh_error*100.);
+  fprintf(stderr,"pbk[][] average %% deviance of GPU calculation from CPU calculation: %g\n",
+	  pbk_error*100.);
   fprintf(stderr,"GPU is %1.1fX faster than CPU\n", cpu_ms/gpu_ms);
   
   free(pjh_gpu[0]);
@@ -214,6 +250,12 @@ int main(int argc, char *argv[]) {
   free(pjh_cpu[0]);
   free(pjh_cpu);
 
+  free(pbk_gpu[0]);
+  free(pbk_gpu);
+
+  free(pbk_cpu[0]);
+  free(pbk_cpu);
+
   CUDA_FREE(cu_lft);
   free(lft);
   free(fsp);
@@ -221,4 +263,3 @@ int main(int argc, char *argv[]) {
 }
 #endif
 
-}

@@ -314,7 +314,7 @@ static double **pjh_use_splines(double *fsp, int n) {
 }
 
 #ifdef CUDA
-void cuda_calculate_pjh(double *, double *, double *, int);
+void cuda_calculate_pbk(double *, double *, double *, double *, int);
 double *cuda_pjh_init_tables(int);
 static double *cu_lft = NULL;
 #endif
@@ -323,7 +323,7 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 				    int asc_depth, int asc_min_freq,
 				    int ascbias_background_only,
 				    int include_invariant) {
-  int b, i, j, k, q, f;
+  int b, i, j, k, f;
   double **pjh, **pbk, *x, **y, **fy, *p, p_sum;
   sm_ptable_t sm_ptable;
   static int warned = 0;
@@ -342,12 +342,19 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
   } else {
     struct timeval stopwatch;
     gettimeofday(&stopwatch, NULL);
-    fprintf(stderr,"Computing pjh[][] for sample size %d\n", sample_size);
     MA(pjh, sizeof(double *)*(sample_size + 1));
-    MA(pjh[0], sizeof(double)*((sample_size+1)*(sample_size+1)));
+    CA(pjh[0], sizeof(double)*((sample_size+1)*(sample_size+1)));
     for(j=0;j<=sample_size;j++)
        pjh[j] = pjh[0] + j*(sample_size+1);
+    MA(pbk, sizeof(double *)*(sample_size+1));
+    CA(pbk[0], sizeof(double)*((sample_size+1)*(sample_size+1)));
+    for(b=0;b<=sample_size;b++) {
+      pbk[b] = pbk[0] + b*(sample_size+1);
+    }
+    
 #ifndef CUDA
+    fprintf(stderr,"Computing pjh[][] (CPU) for sample size %d\n", sample_size);
+
     for(j=0;j<=sample_size;j++) {
       int h;
       
@@ -361,20 +368,8 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 	}
       }
     }
-#else
-    cuda_calculate_pjh(pjh[0], fsp, cu_lft, sample_size);
-#endif
-    
-    fprintf(stderr,"Done computing pjh[][] for sample size %d (%1.1f sec)\n",
+    fprintf(stderr,"Done computing pbk[][] (CPU) for sample size %d (%1.1f sec)\n",
 	    sample_size, elapsed_time(&stopwatch));
-  }
-
-  MA(pbk, sizeof(double *)*(sample_size+1));
-  MA(pbk[0], sizeof(double)*((sample_size+1)*(sample_size+1)));
-  for(b=0;b<=sample_size;b++) {
-    pbk[b] = pbk[0] + b*(sample_size+1);
-    for(k=0;k<sample_size;k++) {
-      pbk[b][k] = 0.;
 
       /* Suppose <k> lineages escape the sweep and <n - k> lineages do not. 
 	 (That is, <n - k> lineages coalesce at the point in time the swept
@@ -410,19 +405,29 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 	 alpha*distance, expressed here as <ad>.
       */ 
 
-      q = b - (sample_size - k) + 1;
-      if (q > 0) {
-	pbk[b][k] += pjh[q][k+1]*(q/(double) (k+1));
-      }
-      if (b < k+1) {
-	pbk[b][k] += pjh[b][k+1]*((k+1-b)/(double) (k+1));
+    
+    for(b=0;b<=sample_size;b++) {
+      for(k=0;k<sample_size;k++) {
+	int q;
+	q = b - (sample_size - k) + 1;
+	if (q > 0) {
+	  pbk[b][k] += pjh[q][k+1]*(q/(double) (k+1));
+	}
+	if (b < k+1) {
+	  pbk[b][k] += pjh[b][k+1]*((k+1-b)/(double) (k+1));
+	}
       }
     }
+#else 
+    fprintf(stderr,"Computing pbk[][] (GPU) for sample size %d\n", sample_size);
+
+    cuda_calculate_pbk(pjh[0], pbk[0], fsp, cu_lft, sample_size);
+    fprintf(stderr,"Done computing pbk[][] (GPU) for sample size %d (%1.1f sec)\n",
+	    sample_size, elapsed_time(&stopwatch));
+#endif
+    free(pjh[0]);
+    free(pjh);
   }
-
-  free(pjh[0]);
-  free(pjh);
-
 
   sm_ptable.sample_size = sample_size;
   MA(sm_ptable.spline_func, sizeof(spline_t *)*(sample_size+1));

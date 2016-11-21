@@ -22,7 +22,7 @@ ifeq ($(OS),Darwin)
 	CFLAGS+=-DDARWIN
 endif
 
-all: fscl #sm-sample ascbias-segments
+all: fscl cuda_pjh #sm-sample ascbias-segments
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
@@ -32,6 +32,9 @@ all: fscl #sm-sample ascbias-segments
 
 fscl: $(OBJ)
 	gcc -o $@ $^ $(LD_FLAGS) $(LIBS)
+
+cuda_pjh: pjh.cu
+	$(NVCC) $(NVCC_FLAGS) -DUNIT_TEST $< -o $@ --ptxas-options=-v
 
 ms-parser.c: ms-parser.y
 	$(YACC) -p ms -d -o$@ $<
