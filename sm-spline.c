@@ -233,7 +233,7 @@ static void sm_free(sm_ptable_t *sm_p) {
 }
 
 
-static double p_kescape(int k, int n, double ad) {
+static double __attribute__((unused))p_kescape(int k, int n, double ad) {
 
   if (k == 0) return exp(-n*ad);
   return exp(lchoose(n, k) + k * log(1.0 - exp(-ad)) - (n-k)*ad);
@@ -314,7 +314,12 @@ static double **pjh_use_splines(double *fsp, int n) {
 }
 
 #ifdef CUDA
-void cuda_calculate_pbk(double *, double *, double *, double *, int);
+
+void cuda_calculate_pbk(double *pjh, double *pbk, double **r_cu_pbk, double **r_cu_fsp,
+			double *fsp, double *cu_lft, int sample_size);
+void cuda_calculate_spline_pts(double *x, double *spf, double *cu_fsp,
+			       double *cu_pbk, double *cu_lft,
+			       int spline_pts, int sample_size);
 double *cuda_pjh_init_tables(int);
 static double *cu_lft = NULL;
 #endif
@@ -323,8 +328,11 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 				    int asc_depth, int asc_min_freq,
 				    int ascbias_background_only,
 				    int include_invariant) {
-  int b, i, j, k, f;
-  double **pjh, **pbk, *x, **y, **fy, *p, p_sum;
+  int b, i, j, f;
+  int __attribute__((unused)) k;
+  double **pjh, **pbk, *x, **y, **fy, **spf, p_sum;
+  double __attribute__((unused)) *cu_pbk;
+  double __attribute__((unused)) *cu_fsp;
   sm_ptable_t sm_ptable;
   static int warned = 0;
 
@@ -421,7 +429,7 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
 #else 
     fprintf(stderr,"Computing pbk[][] (GPU) for sample size %d\n", sample_size);
 
-    cuda_calculate_pbk(pjh[0], pbk[0], fsp, cu_lft, sample_size);
+    cuda_calculate_pbk(pjh[0], pbk[0], &cu_pbk, &cu_fsp, fsp, cu_lft, sample_size);
     fprintf(stderr,"Done computing pbk[][] (GPU) for sample size %d (%1.1f sec)\n",
 	    sample_size, elapsed_time(&stopwatch));
 #endif
@@ -441,50 +449,67 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
   for(f=0;f<=sample_size-f;f++)
     MA(fy[f], sizeof(double)*(spline_pts+1));
 
-  MA(p, sizeof(double)*(sample_size+1));
+  MA(spf, sizeof(double)*(spline_pts+1));
+  MA(spf[0], sizeof(double)*(spline_pts+1)*(sample_size+1));
+  for(i=1; i <= spline_pts; i++)
+    spf[i] = spf[i-1] + (sample_size+1);
 
+  for(i=0; i <= spline_pts; i++) x[i] = LOG_AD_MIN + i*log_ad_step;
+  
+#ifndef CUDA
   for(i=0; i<=spline_pts; i++) {
-    double log_ad, ad;
+    double log_ad, ad, p_sum;
 
-    log_ad = LOG_AD_MIN + i*log_ad_step;
+    log_ad = x[i];
     ad = exp(log_ad);
 
     p_sum = 0.;
     for(f=0;f<=sample_size;f++) {
-      p[f] = p_kescape(sample_size, sample_size, ad)*fsp[f];
+      spf[i][f] = p_kescape(sample_size, sample_size, ad)*fsp[f];
       for(k=0;k<sample_size;k++) {
-	p[f] += p_kescape(k, sample_size, ad)*pbk[f][k];
+	spf[i][f] += p_kescape(k, sample_size, ad)*pbk[f][k];
       }
-      p_sum += p[f];
     }
+  }
+#else
+  cuda_calculate_spline_pts(x, spf[0], cu_pbk, cu_fsp, cu_lft, spline_pts, sample_size);
+#endif
+  for(i=0; i <= spline_pts; i++) {
+    p_sum = 0.;
+    for(f=0; f <= sample_size; f++) p_sum += spf[i][f];
+
     if (!include_invariant) {
-      p_sum -= p[0] + p[sample_size];
-      p[0] = p[sample_size] = 0.;
+      p_sum -= spf[i][0] + spf[i][sample_size];
+      spf[i][0] = spf[i][sample_size] = 0.;
     }
-    for(f=0;f<=sample_size;f++) p[f] /= p_sum;
+    for(f=0;f<=sample_size;f++) spf[i][f] /= p_sum;
 
     if (asc_depth > 0 && ascbias_background_only == 0)
-      ascbias_adjust_expect(p, sample_size, asc_min_freq, asc_depth);
+      ascbias_adjust_expect(spf[i], sample_size, asc_min_freq, asc_depth);
 
     for(f=0;f<=sample_size;f++) {
-      if (p[f] == 0.) y[f][i] = log(DBL_MIN);
-      else y[f][i] = log(p[f]);
+      if (spf[i][f] == 0.) y[f][i] = log(DBL_MIN);
+      else y[f][i] = log(spf[i][f]);
     }
 
     for(f=0;f<sample_size - f;f++) {
-      if (p[f] + p[sample_size - f] == 0.) fy[f][i] = log(DBL_MIN);
-      else fy[f][i] = log(p[f] + p[sample_size - f]);
+      if (spf[i][f] + spf[i][sample_size - f] == 0.) fy[f][i] = log(DBL_MIN);
+      else fy[f][i] = log(spf[i][f] + spf[i][sample_size - f]);
     }
     if (f == sample_size - f) {
-      if (p[f] == 0.) fy[f][i] = log(DBL_MIN);
-      else fy[f][i] = log(p[f]);
+      if (spf[i][f] == 0.) fy[f][i] = log(DBL_MIN);
+      else fy[f][i] = log(spf[i][f]);
     }
 
-    x[i] = log_ad;
-    logmsg(MSG_DEBUG1,"%5d %5d %5.2f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f", sample_size, i, x[i], p[0], p[1], p[2], p[sample_size/2], p[sample_size-2], p[sample_size-1],p[sample_size]);
+    logmsg(MSG_DEBUG1,"%5d %5d %5.2f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f", sample_size, i, x[i],
+	   spf[i][0], spf[i][1], spf[i][2], spf[i][sample_size/2], spf[i][sample_size-2], spf[i][sample_size-1],
+	   spf[i][sample_size]);
   }
   logmsg(MSG_DEBUG1,"bgrnd %d %5.3f %5.3f %5.3f %5.3f", sample_size, fsp[0], fsp[1], fsp[sample_size-1], fsp[sample_size]);
 
+  free(spf[0]);
+  free(spf);
+  
   sm_ptable.pbk = pbk;
   sm_ptable.fsp = fsp;
 
@@ -501,7 +526,6 @@ sm_ptable_t compute_sweep_model_fsp(double *fsp, int sample_size,
   free(x);
   free(y);
   free(fy);
-  free(p);
 
   return sm_ptable;
 }

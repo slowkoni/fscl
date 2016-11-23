@@ -34,7 +34,7 @@ if ((p) == NULL) {  \
 	  __FILE__,__LINE__, (s)/1e6);				    \
   abort();							    \
   }\
-    memset((p), 0x0, (s)); \
+ memset((p), 0x0, (s)*sizeof(t));		\
 }
 
 #undef RA
